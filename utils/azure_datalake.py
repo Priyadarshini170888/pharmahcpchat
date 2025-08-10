@@ -10,10 +10,14 @@ def get_service_client():
     )
 
 def upload_file_to_datalake(file_stream, file_name):
+    if not config.AZURE_FILE_SYSTEM:
+        raise ValueError("AZURE_FILE_SYSTEM is not set in config or environment variables")
+    
     service_client = get_service_client()
     file_system_client = service_client.get_file_system_client(file_system=config.AZURE_FILE_SYSTEM)
     directory_client = file_system_client.get_directory_client("")
     file_client = directory_client.create_file(file_name)
+    
     data = file_stream.read()
     file_client.append_data(data, 0, len(data))
     file_client.flush_data(len(data))
