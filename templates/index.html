@@ -1,0 +1,176 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>RAG Chatbot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>RAG Chatbot</h1>
+
+    <div class="upload-section card">
+        <h2>Upload PDF</h2>
+        <div class="row">
+            <input type="file" id="pdfFile" />
+            <button id="uploadBtn" onclick="uploadFile()">Upload</button>
+        </div>
+        <p id="uploadStatus" class="muted"></p>
+    </div>
+
+    <div class="chat-section card">
+        <h2>Ask a Question</h2>
+        <div class="row">
+            <input type="text" id="question" placeholder="Enter your question" />
+            <button id="askBtn" onclick="askQuestion()">Ask</button>
+        </div>
+        <div id="answerBox" class="answers"></div>
+    </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay" class="loading-overlay hidden" role="status" aria-hidden="true">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="loading-text">Working — please wait...</div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script>
+/* Utility: show toast */
+function showToast(message, type='info', timeout=4000) {
+    const t = document.getElementById('toast');
+    t.innerText = message;
+    t.className = `toast ${type}`;
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), timeout);
+}
+
+/* Loading overlay helpers */
+function setLoading(on) {
+    const overlay = document.getElementById('loadingOverlay');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const askBtn = document.getElementById('askBtn');
+    const pdfFile = document.getElementById('pdfFile');
+    const questionInput = document.getElementById('question');
+
+    if (on) {
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden','false');
+        uploadBtn.disabled = true;
+        askBtn.disabled = true;
+        pdfFile.disabled = true;
+        questionInput.disabled = true;
+    } else {
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden','true');
+        uploadBtn.disabled = false;
+        askBtn.disabled = false;
+        pdfFile.disabled = false;
+        questionInput.disabled = false;
+    }
+}
+
+async function uploadFile() {
+    const fileEl = document.getElementById("pdfFile");
+    const file = fileEl.files[0];
+    if (!file) {
+        showToast("Please select a file to upload", "error");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        setLoading(true);
+        const res = await fetch("/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById("uploadStatus").innerText = data.message || "Uploaded";
+            showToast("File uploaded and indexed", "success");
+        } else {
+            document.getElementById("uploadStatus").innerText = data.error || "Upload failed";
+            showToast(data.error || "Upload failed", "error");
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Upload request failed", "error");
+    } finally {
+        setLoading(false);
+    }
+}
+
+async function askQuestion() {
+    const q = document.getElementById("question").value.trim();
+    if (!q) {
+        showToast("Please enter a question", "error");
+        return;
+    }
+
+    try {
+        setLoading(true);
+        // show interim card
+        const answerBox = document.getElementById("answerBox");
+        answerBox.innerHTML = `<div class="answer-card pending"><strong>Thinking...</strong></div>`;
+
+        const res = await fetch("/ask", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({question: q})
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            if (data.table_data) {
+                // render table nicely
+                const tableHtml = renderTable(data.table_data);
+                answerBox.innerHTML = `<div class="answer-card">${tableHtml}</div>`;
+            } else {
+                answerBox.innerHTML = `<div class='answer-card'><strong>Answer:</strong><div class="answer-text">${escapeHtml(data.answer)}</div></div>`;
+            }
+        } else {
+            answerBox.innerHTML = `<div class='answer-card error'>${escapeHtml(data.error || "Ask failed")}</div>`;
+            showToast(data.error || "Ask failed", "error");
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Ask request failed", "error");
+        document.getElementById("answerBox").innerHTML = `<div class='answer-card error'>Request failed</div>`;
+    } finally {
+        setLoading(false);
+    }
+}
+
+/* small helpers */
+function escapeHtml(unsafe) {
+    if (!unsafe) return "";
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
+function renderTable(tableData) {
+    // tableData: array of arrays
+    let html = "<div class='table-wrapper'><table><thead><tr>";
+    const header = tableData[0] || [];
+    header.forEach(h => {
+        html += `<th>${escapeHtml(h)}</th>`;
+    });
+    html += `</tr></thead><tbody>`;
+    for (let i = 1; i < tableData.length; i++) {
+        html += "<tr>";
+        tableData[i].forEach(c => html += `<td>${escapeHtml(c)}</td>`);
+        html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    return html;
+}
+</script>
+</body>
+</html>
