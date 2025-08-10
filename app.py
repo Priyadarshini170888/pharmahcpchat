@@ -34,6 +34,7 @@ def upload():
         app.logger.error("Upload error: %s\n%s", e, traceback.format_exc())
         return jsonify({"error": "Upload failed", "details": str(e)}), 500
 
+
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
